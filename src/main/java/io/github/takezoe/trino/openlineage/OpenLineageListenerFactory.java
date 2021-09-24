@@ -17,6 +17,7 @@ import io.trino.spi.eventlistener.EventListener;
 import io.trino.spi.eventlistener.EventListenerFactory;
 
 import java.util.Map;
+import java.util.Optional;
 
 public class OpenLineageListenerFactory
         implements EventListenerFactory
@@ -30,6 +31,10 @@ public class OpenLineageListenerFactory
     @Override
     public EventListener create(Map<String, String> config)
     {
-        return new OpenLineageListener();
+        System.out.println("==== config ====");
+        System.out.println(config);
+        String url = config.get("openlineage.url");
+        String apiKey = config.get("openlineage.apikey");
+        return new OpenLineageListener(url, Optional.ofNullable(apiKey));
     }
 }

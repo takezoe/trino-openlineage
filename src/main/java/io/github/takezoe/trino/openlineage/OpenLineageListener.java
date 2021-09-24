@@ -32,8 +32,13 @@ import static com.google.common.collect.ImmutableList.toImmutableList;
 public class OpenLineageListener
         implements EventListener
 {
-    private OpenLineage ol = new OpenLineage(URI.create("https://github.com/takezoe/trino-openlineage"));
-    private OpenLineageClient client = new OpenLineageClient(Optional.empty());
+    private final OpenLineage ol = new OpenLineage(URI.create("https://github.com/takezoe/trino-openlineage"));
+    private final OpenLineageClient client;
+
+    public OpenLineageListener(String url, Optional<String> apiKey)
+    {
+        this.client = new OpenLineageClient(url, apiKey);
+    }
 
     @Override
     public void queryCreated(QueryCreatedEvent queryCreatedEvent)

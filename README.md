@@ -23,4 +23,5 @@ Add the following line to `$TRINO_HOME/etc/event-listener.properties`:
 
 ```properties
 event-listener.name=openlineage
+openlineage.url=http://localhost:5000
 ```

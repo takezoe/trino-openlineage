@@ -31,25 +31,28 @@ import java.util.Optional;
 public class OpenLineageClient
 {
     private final JettyHttpClient jettyClient;
+    private final String url;
     private final Optional<String> apiKey;
     private static final ObjectMapper objectMapper = createMapper();
 
-    public OpenLineageClient(Optional<String> apiKey)
+    public OpenLineageClient(String url, Optional<String> apiKey)
     {
         this.jettyClient = new JettyHttpClient();
+        this.url = url;
         this.apiKey = apiKey;
     }
 
     public void emit(OpenLineage.RunEvent event)
     {
         try {
-            System.out.println(objectMapper.writeValueAsString(event)); // TODO logging
+            String json = objectMapper.writeValueAsString(event);
+            System.out.println(json); // TODO logging
 
             Request.Builder requestBuilder = Request.builder()
                     .setMethod("POST")
-                    .setUri(URI.create("http://localhost:5000/api/v1/lineage")) // TODO configurable
+                    .setUri(URI.create(url + "/api/v1/lineage")) // TODO configurable
                     .addHeader("Content-Type", "application/json")
-                    .setBodyGenerator(StaticBodyGenerator.createStaticBodyGenerator(objectMapper.writeValueAsString(event).getBytes(StandardCharsets.UTF_8)));
+                    .setBodyGenerator(StaticBodyGenerator.createStaticBodyGenerator(json.getBytes(StandardCharsets.UTF_8)));
 
             if (apiKey.isPresent()) {
                 requestBuilder.addHeader("Authorization", "Bearer " + apiKey.get());
