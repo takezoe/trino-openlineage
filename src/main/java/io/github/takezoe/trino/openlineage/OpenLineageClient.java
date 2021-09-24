@@ -22,6 +22,7 @@ import io.airlift.http.client.Request;
 import io.airlift.http.client.StaticBodyGenerator;
 import io.airlift.http.client.StatusResponseHandler;
 import io.airlift.http.client.jetty.JettyHttpClient;
+import io.airlift.log.Logger;
 import io.openlineage.client.OpenLineage;
 
 import java.net.URI;
@@ -34,6 +35,7 @@ public class OpenLineageClient
     private final String url;
     private final Optional<String> apiKey;
     private static final ObjectMapper objectMapper = createMapper();
+    private static final Logger logger = Logger.get(OpenLineageClient.class);
 
     public OpenLineageClient(String url, Optional<String> apiKey)
     {
@@ -46,11 +48,11 @@ public class OpenLineageClient
     {
         try {
             String json = objectMapper.writeValueAsString(event);
-            System.out.println(json); // TODO logging
+            logger.info(json);
 
             Request.Builder requestBuilder = Request.builder()
                     .setMethod("POST")
-                    .setUri(URI.create(url + "/api/v1/lineage")) // TODO configurable
+                    .setUri(URI.create(url + "/api/v1/lineage"))
                     .addHeader("Content-Type", "application/json")
                     .setBodyGenerator(StaticBodyGenerator.createStaticBodyGenerator(json.getBytes(StandardCharsets.UTF_8)));
 
@@ -62,7 +64,7 @@ public class OpenLineageClient
             System.out.println(status.getStatusCode());
         }
         catch (Exception e) {
-            e.printStackTrace(); // TODO logging
+            logger.error(e);
         }
     }
 

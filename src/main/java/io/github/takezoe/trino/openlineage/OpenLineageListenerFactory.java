@@ -13,15 +13,20 @@
  */
 package io.github.takezoe.trino.openlineage;
 
+import io.airlift.log.Logger;
 import io.trino.spi.eventlistener.EventListener;
 import io.trino.spi.eventlistener.EventListenerFactory;
 
 import java.util.Map;
 import java.util.Optional;
 
+import static java.util.Objects.requireNonNull;
+
 public class OpenLineageListenerFactory
         implements EventListenerFactory
 {
+    private static final Logger logger = Logger.get(OpenLineageListenerFactory.class);
+
     @Override
     public String getName()
     {
@@ -31,10 +36,11 @@ public class OpenLineageListenerFactory
     @Override
     public EventListener create(Map<String, String> config)
     {
-        System.out.println("==== config ====");
-        System.out.println(config);
-        String url = config.get("openlineage.url");
+        String url = requireNonNull(config.get("openlineage.url"));
         String apiKey = config.get("openlineage.apikey");
+
+        logger.info("openlineage.url: " + url);
+
         return new OpenLineageListener(url, Optional.ofNullable(apiKey));
     }
 }
