@@ -2,6 +2,8 @@ trino-openlineage
 ====
 An experimental OpenLineage integration for Trino
 
+![Marquez](marquez.png)
+
 ## Requirements
 
 - Java 11
