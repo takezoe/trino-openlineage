@@ -47,6 +47,7 @@ public class OpenLineageClient
     public void emit(OpenLineage.RunEvent event)
     {
         try {
+            // TODO: Do asynchronously with retry if failed
             String json = objectMapper.writeValueAsString(event);
             logger.info(json);
 
@@ -61,7 +62,7 @@ public class OpenLineageClient
             }
 
             StatusResponseHandler.StatusResponse status = jettyClient.execute(requestBuilder.build(), StatusResponseHandler.createStatusResponseHandler());
-            System.out.println(status.getStatusCode());
+            logger.info("Response status: " + status.getStatusCode());
         }
         catch (Exception e) {
             logger.error(e);
