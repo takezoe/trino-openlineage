@@ -1,6 +1,6 @@
 trino-openlineage
 ====
-An experimental OpenLineage integration for Trino
+An experimental [OpenLineage](https://github.com/OpenLineage/OpenLineage) integration for [Trino](https://github.com/trinodb/trino)
 
 ![Marquez](marquez.png)
 
@@ -9,6 +9,7 @@ An experimental OpenLineage integration for Trino
 - Java 11
 - Maven
 - Trino 362
+- [Marquez](https://github.com/MarquezProject/marquez)
 
 ## Installation
 
