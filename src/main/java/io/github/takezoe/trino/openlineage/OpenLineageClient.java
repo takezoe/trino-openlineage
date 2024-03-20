@@ -57,9 +57,7 @@ public class OpenLineageClient
                     .addHeader("Content-Type", "application/json")
                     .setBodyGenerator(StaticBodyGenerator.createStaticBodyGenerator(json.getBytes(StandardCharsets.UTF_8)));
 
-            if (apiKey.isPresent()) {
-                requestBuilder.addHeader("Authorization", "Bearer " + apiKey.get());
-            }
+            apiKey.ifPresent(s -> requestBuilder.addHeader("Authorization", "Bearer " + s));
 
             StatusResponseHandler.StatusResponse status = jettyClient.execute(requestBuilder.build(), StatusResponseHandler.createStatusResponseHandler());
             logger.info("Response status: " + status.getStatusCode());

@@ -57,7 +57,7 @@ public class OpenLineageListener
     private void sendStartEvent(UUID runId, QueryCompletedEvent queryCompletedEvent)
     {
         OpenLineage.RunEvent startEvent = ol.newRunEventBuilder()
-                .eventType("START")
+                .eventType(OpenLineage.RunEvent.EventType.START)
                 .eventTime(queryCompletedEvent.getExecutionStartTime().atZone(ZoneId.of("UTC")))
                 .run(ol.newRunBuilder()
                         .runId(runId)
@@ -81,7 +81,7 @@ public class OpenLineageListener
         boolean failed = queryCompletedEvent.getMetadata().getQueryState().equals("FAILED");
 
         OpenLineage.RunEvent completedEvent = ol.newRunEventBuilder()
-                .eventType(failed ? "FAIL" : "COMPLETE")
+                .eventType(failed ? OpenLineage.RunEvent.EventType.FAIL : OpenLineage.RunEvent.EventType.COMPLETE)
                 .eventTime(queryCompletedEvent.getEndTime().atZone(ZoneId.of("UTC")))
                 .run(ol.newRunBuilder().runId(runID).build())
                 .job(ol.newJobBuilder()
