@@ -19,8 +19,11 @@ import io.trino.spi.eventlistener.EventListener;
 import io.trino.spi.eventlistener.QueryCompletedEvent;
 import io.trino.spi.eventlistener.QueryCreatedEvent;
 import io.trino.spi.eventlistener.QueryIOMetadata;
+import io.trino.spi.eventlistener.QueryMetadata;
 import io.trino.spi.eventlistener.QueryOutputMetadata;
+import io.trino.spi.eventlistener.QueryStatistics;
 
+import java.lang.reflect.Field;
 import java.net.URI;
 import java.time.ZoneId;
 import java.util.List;
@@ -34,10 +37,14 @@ public class OpenLineageListener
 {
     private final OpenLineage ol = new OpenLineage(URI.create("https://github.com/takezoe/trino-openlineage"));
     private final OpenLineageClient client;
+    private final Boolean trinoMetadataFacetEnabled;
+    private final Boolean queryStatisticsFacetEnabled;
 
-    public OpenLineageListener(String url, Optional<String> apiKey)
+    public OpenLineageListener(String url, Optional<String> apiKey, Boolean trinoMetadataFacetEnabled, Boolean queryStatisticsFacetEnabled)
     {
         this.client = new OpenLineageClient(url, apiKey);
+        this.trinoMetadataFacetEnabled = trinoMetadataFacetEnabled;
+        this.queryStatisticsFacetEnabled = queryStatisticsFacetEnabled;
     }
 
     @Override
@@ -50,50 +57,114 @@ public class OpenLineageListener
     public void queryCompleted(QueryCompletedEvent queryCompletedEvent)
     {
         UUID runID = UUID.randomUUID();
-        sendStartEvent(runID, queryCompletedEvent);
-        sendCompletedEvent(runID, queryCompletedEvent);
+        try {
+            sendStartEvent(runID, queryCompletedEvent);
+        }
+        catch (IllegalAccessException e) {
+            throw new RuntimeException(e);
+        }
+        try {
+            sendCompletedEvent(runID, queryCompletedEvent);
+        }
+        catch (IllegalAccessException e) {
+            throw new RuntimeException(e);
+        }
     }
 
-    private void sendStartEvent(UUID runId, QueryCompletedEvent queryCompletedEvent)
+    private Optional<OpenLineage.RunFacet> getTrinoMetadataFacet(QueryMetadata queryMetadata)
     {
-        OpenLineage.RunEvent startEvent = ol.newRunEventBuilder()
-                .eventType(OpenLineage.RunEvent.EventType.START)
-                .eventTime(queryCompletedEvent.getExecutionStartTime().atZone(ZoneId.of("UTC")))
-                .run(ol.newRunBuilder()
-                        .runId(runId)
-                        .build())
-                .job(ol.newJobBuilder()
-                        .namespace(queryCompletedEvent.getContext().getUser())
-                        .name(queryCompletedEvent.getMetadata().getQueryId())
-                        .facets(ol.newJobFacetsBuilder()
-                                .sql(ol.newSQLJobFacet(queryCompletedEvent.getMetadata().getQuery()))
-                                .build())
-                        .build())
-                .inputs(buildInputs(queryCompletedEvent.getIoMetadata()))
-                .outputs(buildOutputs(queryCompletedEvent.getIoMetadata()))
-                .build();
+        if (this.trinoMetadataFacetEnabled) {
+            OpenLineage.RunFacet trinoMetadataFacet = ol.newRunFacet();
+
+            if (queryMetadata.getPlan().isPresent()) {
+                trinoMetadataFacet.getAdditionalProperties().put("queryPlan", queryMetadata.getPlan().orElse(""));
+            }
+            if (queryMetadata.getTransactionId().isPresent()) {
+                trinoMetadataFacet.getAdditionalProperties().put("transactionId", queryMetadata.getTransactionId().orElse(""));
+            }
+            return Optional.of(trinoMetadataFacet);
+        }
+        return Optional.empty();
+    }
+
+    private Optional<OpenLineage.RunFacet> getTrinoQueryStatisticsFacet(QueryStatistics queryStatistics)
+            throws IllegalAccessException
+    {
+        if (this.queryStatisticsFacetEnabled) {
+            OpenLineage.RunFacet trinoQueryStatisticsFacet = ol.newRunFacet();
+
+            for (Field field : queryStatistics.getClass().getDeclaredFields()) {
+                field.setAccessible(true);
+                trinoQueryStatisticsFacet
+                        .getAdditionalProperties()
+                        .put(field.getName(), String.valueOf(field.get(queryStatistics)));
+            }
+            return Optional.of(trinoQueryStatisticsFacet);
+        }
+        return Optional.empty();
+    }
+
+    private void sendStartEvent(UUID runID, QueryCompletedEvent queryCompletedEvent)
+            throws IllegalAccessException
+    {
+        OpenLineage.RunFacetsBuilder runFacetsBuilder = ol.newRunFacetsBuilder();
+        Optional<OpenLineage.RunFacet> trinoMetadata = getTrinoMetadataFacet(queryCompletedEvent.getMetadata());
+
+        trinoMetadata.ifPresent(runFacet -> runFacetsBuilder.put("trino.metadata", runFacet));
+
+        OpenLineage.RunEvent startEvent =
+                ol.newRunEventBuilder()
+                        .eventType(OpenLineage.RunEvent.EventType.START)
+                        .eventTime(queryCompletedEvent.getExecutionStartTime().atZone(ZoneId.of("UTC")))
+                        .run(ol.newRunBuilder().runId(runID).facets(runFacetsBuilder.build()).build())
+                        .job(
+                                ol.newJobBuilder()
+                                        .namespace(queryCompletedEvent.getContext().getUser())
+                                        .name(queryCompletedEvent.getMetadata().getQueryId())
+                                        .facets(
+                                                ol.newJobFacetsBuilder()
+                                                        .sql(ol.newSQLJobFacet(queryCompletedEvent.getMetadata().getQuery()))
+                                                        .build())
+                                        .build())
+                        .inputs(buildInputs(queryCompletedEvent.getIoMetadata()))
+                        .outputs(buildOutputs(queryCompletedEvent.getIoMetadata()))
+                        .build();
 
         client.emit(startEvent);
     }
 
     private void sendCompletedEvent(UUID runID, QueryCompletedEvent queryCompletedEvent)
+            throws IllegalAccessException
     {
         boolean failed = queryCompletedEvent.getMetadata().getQueryState().equals("FAILED");
 
-        OpenLineage.RunEvent completedEvent = ol.newRunEventBuilder()
-                .eventType(failed ? OpenLineage.RunEvent.EventType.FAIL : OpenLineage.RunEvent.EventType.COMPLETE)
-                .eventTime(queryCompletedEvent.getEndTime().atZone(ZoneId.of("UTC")))
-                .run(ol.newRunBuilder().runId(runID).build())
-                .job(ol.newJobBuilder()
-                        .namespace(queryCompletedEvent.getContext().getUser())
-                        .name(queryCompletedEvent.getMetadata().getQueryId())
-                        .facets(ol.newJobFacetsBuilder()
-                                .sql(ol.newSQLJobFacet(queryCompletedEvent.getMetadata().getQuery()))
-                                .build())
-                        .build())
-                .inputs(buildInputs(queryCompletedEvent.getIoMetadata()))
-                .outputs(buildOutputs(queryCompletedEvent.getIoMetadata()))
-                .build();
+        OpenLineage.RunFacetsBuilder runFacetsBuilder = ol.newRunFacetsBuilder();
+        Optional<OpenLineage.RunFacet> trinoMetadata = getTrinoMetadataFacet(queryCompletedEvent.getMetadata());
+        Optional<OpenLineage.RunFacet> trinoQueryStatistics = getTrinoQueryStatisticsFacet(queryCompletedEvent.getStatistics());
+
+        trinoMetadata.ifPresent(runFacet -> runFacetsBuilder.put("trino.metadata", runFacet));
+        trinoQueryStatistics.ifPresent(runFacet -> runFacetsBuilder.put("trino.queryStatistics", runFacet));
+
+        OpenLineage.RunEvent completedEvent =
+                ol.newRunEventBuilder()
+                        .eventType(
+                                failed
+                                        ? OpenLineage.RunEvent.EventType.FAIL
+                                        : OpenLineage.RunEvent.EventType.COMPLETE)
+                        .eventTime(queryCompletedEvent.getEndTime().atZone(ZoneId.of("UTC")))
+                        .run(ol.newRunBuilder().runId(runID).facets(runFacetsBuilder.build()).build())
+                        .job(
+                                ol.newJobBuilder()
+                                        .namespace(queryCompletedEvent.getContext().getUser())
+                                        .name(queryCompletedEvent.getMetadata().getQueryId())
+                                        .facets(
+                                                ol.newJobFacetsBuilder()
+                                                        .sql(ol.newSQLJobFacet(queryCompletedEvent.getMetadata().getQuery()))
+                                                        .build())
+                                        .build())
+                        .inputs(buildInputs(queryCompletedEvent.getIoMetadata()))
+                        .outputs(buildOutputs(queryCompletedEvent.getIoMetadata()))
+                        .build();
 
         client.emit(completedEvent);
     }
@@ -101,10 +172,10 @@ public class OpenLineageListener
     private List<OpenLineage.InputDataset> buildInputs(QueryIOMetadata ioMetadata)
     {
         return ioMetadata.getInputs().stream().map(inputMetadata ->
-            ol.newInputDatasetBuilder()
-                    .namespace(getDatasetNamespace(inputMetadata.getCatalogName()))
-                    .name(inputMetadata.getSchema() + "." + inputMetadata.getTable())
-                    .build()
+                ol.newInputDatasetBuilder()
+                        .namespace(getDatasetNamespace(inputMetadata.getCatalogName()))
+                        .name(inputMetadata.getSchema() + "." + inputMetadata.getTable())
+                        .build()
         ).collect(toImmutableList());
     }
 
@@ -113,10 +184,11 @@ public class OpenLineageListener
         Optional<QueryOutputMetadata> outputs = ioMetadata.getOutput();
         if (outputs.isPresent()) {
             QueryOutputMetadata outputMetadata = outputs.get();
-            return ImmutableList.of(ol.newOutputDatasetBuilder()
-                    .namespace(getDatasetNamespace(outputMetadata.getCatalogName()))
-                    .name(outputMetadata.getSchema() + "." + outputMetadata.getTable())
-                    .build());
+            return ImmutableList.of(
+                    ol.newOutputDatasetBuilder()
+                            .namespace(getDatasetNamespace(outputMetadata.getCatalogName()))
+                            .name(outputMetadata.getSchema() + "." + outputMetadata.getTable())
+                            .build());
         }
         else {
             return ImmutableList.of();

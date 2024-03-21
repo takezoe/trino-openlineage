@@ -38,9 +38,11 @@ public class OpenLineageListenerFactory
     {
         String url = requireNonNull(config.get("openlineage.url"));
         String apiKey = config.get("openlineage.apikey");
+        Boolean trinoMetadataFacetEnabled = config.get("openlineage.facets.trinoMetadata.enabled").equalsIgnoreCase("true");
+        Boolean trinoQueryStatisticsFacetEnabled = config.get("openlineage.facets.trinoQueryStatistics.enabled").equalsIgnoreCase("true");
 
         logger.info("openlineage.url: " + url);
 
-        return new OpenLineageListener(url, Optional.ofNullable(apiKey));
+        return new OpenLineageListener(url, Optional.ofNullable(apiKey), trinoMetadataFacetEnabled, trinoQueryStatisticsFacetEnabled);
     }
 }
