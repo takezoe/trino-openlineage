@@ -71,34 +71,46 @@ public class OpenLineageListener
         }
     }
 
+    private Optional<OpenLineage.RunFacet> getTrinoMetadataFacet(QueryMetadata queryMetadata)
+    {
+        if (this.trinoMetadataFacetEnabled) {
+            OpenLineage.RunFacet trinoMetadataFacet = ol.newRunFacet();
+
+            if (queryMetadata.getPlan().isPresent()) {
+                trinoMetadataFacet.getAdditionalProperties().put("queryPlan", queryMetadata.getPlan().orElse(""));
+            }
+            if (queryMetadata.getTransactionId().isPresent()) {
+                trinoMetadataFacet.getAdditionalProperties().put("transactionId", queryMetadata.getTransactionId().orElse(""));
+            }
+            return Optional.of(trinoMetadataFacet);
+        }
+        return Optional.empty();
+    }
+
+    private Optional<OpenLineage.RunFacet> getTrinoQueryStatisticsFacet(QueryStatistics queryStatistics)
+            throws IllegalAccessException
+    {
+        if (this.queryStatisticsFacetEnabled) {
+            OpenLineage.RunFacet trinoQueryStatisticsFacet = ol.newRunFacet();
+
+            for (Field field : queryStatistics.getClass().getDeclaredFields()) {
+                field.setAccessible(true);
+                trinoQueryStatisticsFacet
+                        .getAdditionalProperties()
+                        .put(field.getName(), String.valueOf(field.get(queryStatistics)));
+            }
+            return Optional.of(trinoQueryStatisticsFacet);
+        }
+        return Optional.empty();
+    }
+
     private void sendStartEvent(UUID runID, QueryCompletedEvent queryCompletedEvent)
             throws IllegalAccessException
     {
         OpenLineage.RunFacetsBuilder runFacetsBuilder = ol.newRunFacetsBuilder();
+        Optional<OpenLineage.RunFacet> trinoMetadata = getTrinoMetadataFacet(queryCompletedEvent.getMetadata());
 
-        if (this.trinoMetadataFacetEnabled) {
-            OpenLineage.RunFacet trinoMetadataFacet = ol.newRunFacet();
-            QueryMetadata trinoMetadata = queryCompletedEvent.getMetadata();
-
-            trinoMetadataFacet.getAdditionalProperties().put("queryPlan", String.valueOf(trinoMetadata.getPlan()));
-            trinoMetadataFacet.getAdditionalProperties().put("transactionId", String.valueOf(trinoMetadata.getTransactionId()));
-
-            runFacetsBuilder.put("trino.metadata", trinoMetadataFacet);
-        }
-
-        if (this.queryStatisticsFacetEnabled) {
-            OpenLineage.RunFacet trinoQueryStatisticsFacet = ol.newRunFacet();
-            QueryStatistics trinoQueryStatistics = queryCompletedEvent.getStatistics();
-
-            for (Field field : trinoQueryStatistics.getClass().getDeclaredFields()) {
-                field.setAccessible(true);
-                trinoQueryStatisticsFacet
-                        .getAdditionalProperties()
-                        .put(field.getName(), String.valueOf(field.get(trinoQueryStatistics)));
-            }
-
-            runFacetsBuilder.put("trino.queryStatistics", trinoQueryStatisticsFacet);
-        }
+        trinoMetadata.ifPresent(runFacet -> runFacetsBuilder.put("trino.metadata", runFacet));
 
         OpenLineage.RunEvent startEvent =
                 ol.newRunEventBuilder()
@@ -127,30 +139,11 @@ public class OpenLineageListener
         boolean failed = queryCompletedEvent.getMetadata().getQueryState().equals("FAILED");
 
         OpenLineage.RunFacetsBuilder runFacetsBuilder = ol.newRunFacetsBuilder();
+        Optional<OpenLineage.RunFacet> trinoMetadata = getTrinoMetadataFacet(queryCompletedEvent.getMetadata());
+        Optional<OpenLineage.RunFacet> trinoQueryStatistics = getTrinoQueryStatisticsFacet(queryCompletedEvent.getStatistics());
 
-        if (this.trinoMetadataFacetEnabled) {
-            OpenLineage.RunFacet trinoMetadataFacet = ol.newRunFacet();
-            QueryMetadata trinoMetadata = queryCompletedEvent.getMetadata();
-
-            trinoMetadataFacet.getAdditionalProperties().put("queryPlan", String.valueOf(trinoMetadata.getPlan()));
-            trinoMetadataFacet.getAdditionalProperties().put("transactionId", String.valueOf(trinoMetadata.getTransactionId()));
-
-            runFacetsBuilder.put("trino.metadata", trinoMetadataFacet);
-        }
-
-        if (this.queryStatisticsFacetEnabled) {
-            OpenLineage.RunFacet trinoQueryStatisticsFacet = ol.newRunFacet();
-            QueryStatistics trinoQueryStatistics = queryCompletedEvent.getStatistics();
-
-            for (Field field : trinoQueryStatistics.getClass().getDeclaredFields()) {
-                field.setAccessible(true);
-                trinoQueryStatisticsFacet
-                        .getAdditionalProperties()
-                        .put(field.getName(), String.valueOf(field.get(trinoQueryStatistics)));
-            }
-
-            runFacetsBuilder.put("trino.queryStatistics", trinoQueryStatisticsFacet);
-        }
+        trinoMetadata.ifPresent(runFacet -> runFacetsBuilder.put("trino.metadata", runFacet));
+        trinoQueryStatistics.ifPresent(runFacet -> runFacetsBuilder.put("trino.queryStatistics", runFacet));
 
         OpenLineage.RunEvent completedEvent =
                 ol.newRunEventBuilder()
