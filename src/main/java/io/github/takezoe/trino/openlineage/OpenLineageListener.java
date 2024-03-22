@@ -260,6 +260,6 @@ public class OpenLineageListener
 
     private String getJobNamespace()
     {
-        return this.namespace;
+        return "trino-" + this.namespace;
     }
 }
