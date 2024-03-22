@@ -16,6 +16,7 @@ package io.github.takezoe.trino.openlineage;
 import com.google.common.collect.ImmutableList;
 import io.openlineage.client.OpenLineage;
 import io.trino.spi.eventlistener.EventListener;
+import io.trino.spi.eventlistener.OutputColumnMetadata;
 import io.trino.spi.eventlistener.QueryCompletedEvent;
 import io.trino.spi.eventlistener.QueryCreatedEvent;
 import io.trino.spi.eventlistener.QueryIOMetadata;
@@ -203,17 +204,33 @@ public class OpenLineageListener
         Optional<QueryOutputMetadata> outputs = ioMetadata.getOutput();
         if (outputs.isPresent()) {
             QueryOutputMetadata outputMetadata = outputs.get();
+            List<OutputColumnMetadata> outputColumns = outputMetadata.getColumns().orElse(new ArrayList<>());
+
+            OpenLineage.ColumnLineageDatasetFacetBuilder columnLineageBuilder = ol.newColumnLineageDatasetFacetBuilder();
+
+            outputColumns.forEach(column ->
+                    columnLineageBuilder.put(column.getColumnName(),
+                            ol.newColumnLineageDatasetFacetFieldsAdditionalBuilder()
+                                    .inputFields(column
+                                            .getSourceColumns()
+                                            .stream()
+                                            .map(inputColumn -> ol.newColumnLineageDatasetFacetFieldsAdditionalInputFieldsBuilder()
+                                                    .field(inputColumn.getColumnName())
+                                                    .namespace(inputColumn.getCatalog())
+                                                    .name(inputColumn.getSchema() + "." + inputColumn.getTable())
+                                                    .build())
+                                            .toList()
+                                    ).build()));
+
             return ImmutableList.of(
                     ol.newOutputDatasetBuilder()
                             .namespace(getDatasetNamespace(outputMetadata.getCatalogName()))
                             .name(outputMetadata.getSchema() + "." + outputMetadata.getTable())
                             .facets(ol.newDatasetFacetsBuilder()
+                                    .columnLineage(columnLineageBuilder.build())
                                     .schema(ol.newSchemaDatasetFacetBuilder()
                                             .fields(
-                                                    outputMetadata
-                                                            .getColumns()
-                                                            .orElse(new ArrayList<>())
-                                                            .stream()
+                                                    outputColumns.stream()
                                                             .map(column -> ol.newSchemaDatasetFacetFieldsBuilder()
                                                                             .name(column.getColumnName())
                                                                             .type(column.getColumnType())
