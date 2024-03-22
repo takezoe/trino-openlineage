@@ -40,9 +40,10 @@ public class OpenLineageListenerFactory
         String apiKey = config.get("openlineage.apikey");
         Boolean trinoMetadataFacetEnabled = config.get("openlineage.facets.trinoMetadata.enabled").equalsIgnoreCase("true");
         Boolean trinoQueryStatisticsFacetEnabled = config.get("openlineage.facets.trinoQueryStatistics.enabled").equalsIgnoreCase("true");
+        String namespace = config.get("openlineage.namespace");
 
         logger.info("openlineage.url: " + url);
 
-        return new OpenLineageListener(url, Optional.ofNullable(apiKey), trinoMetadataFacetEnabled, trinoQueryStatisticsFacetEnabled);
+        return new OpenLineageListener(url, Optional.ofNullable(namespace), Optional.ofNullable(apiKey), trinoMetadataFacetEnabled, trinoQueryStatisticsFacetEnabled);
     }
 }

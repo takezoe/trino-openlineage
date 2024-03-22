@@ -16,6 +16,7 @@ package io.github.takezoe.trino.openlineage;
 import com.google.common.collect.ImmutableList;
 import io.openlineage.client.OpenLineage;
 import io.trino.spi.eventlistener.EventListener;
+import io.trino.spi.eventlistener.OutputColumnMetadata;
 import io.trino.spi.eventlistener.QueryCompletedEvent;
 import io.trino.spi.eventlistener.QueryCreatedEvent;
 import io.trino.spi.eventlistener.QueryIOMetadata;
@@ -27,6 +28,7 @@ import java.lang.reflect.Field;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -38,12 +40,14 @@ public class OpenLineageListener
 {
     private final OpenLineage ol = new OpenLineage(URI.create("https://github.com/takezoe/trino-openlineage"));
     private final OpenLineageClient client;
+    private final String namespace;
     private final Boolean trinoMetadataFacetEnabled;
     private final Boolean queryStatisticsFacetEnabled;
 
-    public OpenLineageListener(String url, Optional<String> apiKey, Boolean trinoMetadataFacetEnabled, Boolean queryStatisticsFacetEnabled)
+    public OpenLineageListener(String url, Optional<String> namespace, Optional<String> apiKey, Boolean trinoMetadataFacetEnabled, Boolean queryStatisticsFacetEnabled)
     {
         this.client = new OpenLineageClient(url, apiKey);
+        this.namespace = namespace.orElse("default");
         this.trinoMetadataFacetEnabled = trinoMetadataFacetEnabled;
         this.queryStatisticsFacetEnabled = queryStatisticsFacetEnabled;
     }
@@ -127,7 +131,7 @@ public class OpenLineageListener
                         .run(ol.newRunBuilder().runId(runID).facets(runFacetsBuilder.build()).build())
                         .job(
                                 ol.newJobBuilder()
-                                        .namespace(queryCreatedEvent.getContext().getUser())
+                                        .namespace(getJobNamespace())
                                         .name(queryCreatedEvent.getMetadata().getQueryId())
                                         .facets(
                                                 ol.newJobFacetsBuilder()
@@ -161,7 +165,7 @@ public class OpenLineageListener
                         .run(ol.newRunBuilder().runId(runID).facets(runFacetsBuilder.build()).build())
                         .job(
                                 ol.newJobBuilder()
-                                        .namespace(queryCompletedEvent.getContext().getUser())
+                                        .namespace(getJobNamespace())
                                         .name(queryCompletedEvent.getMetadata().getQueryId())
                                         .facets(
                                                 ol.newJobFacetsBuilder()
@@ -181,6 +185,18 @@ public class OpenLineageListener
                 ol.newInputDatasetBuilder()
                         .namespace(getDatasetNamespace(inputMetadata.getCatalogName()))
                         .name(inputMetadata.getSchema() + "." + inputMetadata.getTable())
+                        .facets(ol.newDatasetFacetsBuilder()
+                                .schema(ol.newSchemaDatasetFacetBuilder()
+                                    .fields(
+                                        inputMetadata
+                                                .getColumns()
+                                                .stream()
+                                                .map(field -> ol.newSchemaDatasetFacetFieldsBuilder()
+                                                        .name(field)
+                                                        .build()
+                                                ).toList())
+                                    .build()
+                        ).build())
                         .build()
         ).collect(toImmutableList());
     }
@@ -190,11 +206,41 @@ public class OpenLineageListener
         Optional<QueryOutputMetadata> outputs = ioMetadata.getOutput();
         if (outputs.isPresent()) {
             QueryOutputMetadata outputMetadata = outputs.get();
+            List<OutputColumnMetadata> outputColumns = outputMetadata.getColumns().orElse(new ArrayList<>());
+
+            OpenLineage.ColumnLineageDatasetFacetBuilder columnLineageBuilder = ol.newColumnLineageDatasetFacetBuilder();
+
+            outputColumns.forEach(column ->
+                    columnLineageBuilder.put(column.getColumnName(),
+                            ol.newColumnLineageDatasetFacetFieldsAdditionalBuilder()
+                                    .inputFields(column
+                                            .getSourceColumns()
+                                            .stream()
+                                            .map(inputColumn -> ol.newColumnLineageDatasetFacetFieldsAdditionalInputFieldsBuilder()
+                                                    .field(inputColumn.getColumnName())
+                                                    .namespace(getDatasetNamespace(inputColumn.getCatalog()))
+                                                    .name(inputColumn.getSchema() + "." + inputColumn.getTable())
+                                                    .build())
+                                            .toList()
+                                    ).build()));
+
             return ImmutableList.of(
                     ol.newOutputDatasetBuilder()
                             .namespace(getDatasetNamespace(outputMetadata.getCatalogName()))
                             .name(outputMetadata.getSchema() + "." + outputMetadata.getTable())
-                            .build());
+                            .facets(ol.newDatasetFacetsBuilder()
+                                    .columnLineage(columnLineageBuilder.build())
+                                    .schema(ol.newSchemaDatasetFacetBuilder()
+                                            .fields(
+                                                    outputColumns.stream()
+                                                            .map(column -> ol.newSchemaDatasetFacetFieldsBuilder()
+                                                                    .name(column.getColumnName())
+                                                                    .type(column.getColumnType())
+                                                                    .build())
+                                                            .toList()
+                                            ).build()
+                                    ).build()
+                            ).build());
         }
         else {
             return ImmutableList.of();
@@ -210,5 +256,10 @@ public class OpenLineageListener
         else {
             return catalogName;
         }
+    }
+
+    private String getJobNamespace()
+    {
+        return this.namespace;
     }
 }
