@@ -18,6 +18,7 @@ import io.openlineage.client.OpenLineage;
 import io.trino.spi.eventlistener.EventListener;
 import io.trino.spi.eventlistener.OutputColumnMetadata;
 import io.trino.spi.eventlistener.QueryCompletedEvent;
+import io.trino.spi.eventlistener.QueryContext;
 import io.trino.spi.eventlistener.QueryCreatedEvent;
 import io.trino.spi.eventlistener.QueryIOMetadata;
 import io.trino.spi.eventlistener.QueryMetadata;
@@ -40,15 +41,17 @@ public class OpenLineageListener
 {
     private final OpenLineage ol = new OpenLineage(URI.create("https://github.com/takezoe/trino-openlineage"));
     private final OpenLineageClient client;
-    private final String namespace;
+    private final Optional<String> namespace;
     private final Boolean trinoMetadataFacetEnabled;
+    private final Boolean trinoQueryContextFacetEnabled;
     private final Boolean queryStatisticsFacetEnabled;
 
-    public OpenLineageListener(String url, Optional<String> namespace, Optional<String> apiKey, Boolean trinoMetadataFacetEnabled, Boolean queryStatisticsFacetEnabled)
+    public OpenLineageListener(String url, Optional<String> namespace, Optional<String> apiKey, Boolean trinoMetadataFacetEnabled, Boolean trinoQueryContextFacetEnabled, Boolean queryStatisticsFacetEnabled)
     {
         this.client = new OpenLineageClient(url, apiKey);
-        this.namespace = namespace.orElse("default");
+        this.namespace = namespace;
         this.trinoMetadataFacetEnabled = trinoMetadataFacetEnabled;
+        this.trinoQueryContextFacetEnabled = trinoQueryContextFacetEnabled;
         this.queryStatisticsFacetEnabled = queryStatisticsFacetEnabled;
     }
 
@@ -83,17 +86,42 @@ public class OpenLineageListener
         }
     }
 
+    private Optional<OpenLineage.RunFacet> getTrinoQueryContextFacet(QueryContext queryContext)
+    {
+        if (this.trinoQueryContextFacetEnabled) {
+            OpenLineage.RunFacet queryContextFacet = ol.newRunFacet();
+
+            queryContextFacet
+                    .getAdditionalProperties()
+                    .put("serverVersion", queryContext.getServerVersion());
+            queryContextFacet
+                    .getAdditionalProperties()
+                    .put("environment", queryContext.getEnvironment());
+            queryContext.getQueryType().ifPresent(queryType ->
+                    queryContextFacet
+                            .getAdditionalProperties()
+                            .put("queryType", queryType));
+
+            return Optional.of(queryContextFacet);
+        }
+        return Optional.empty();
+    }
+
     private Optional<OpenLineage.RunFacet> getTrinoMetadataFacet(QueryMetadata queryMetadata)
     {
         if (this.trinoMetadataFacetEnabled) {
             OpenLineage.RunFacet trinoMetadataFacet = ol.newRunFacet();
 
-            if (queryMetadata.getPlan().isPresent()) {
-                trinoMetadataFacet.getAdditionalProperties().put("queryPlan", queryMetadata.getPlan().orElse(""));
-            }
-            if (queryMetadata.getTransactionId().isPresent()) {
-                trinoMetadataFacet.getAdditionalProperties().put("transactionId", queryMetadata.getTransactionId().orElse(""));
-            }
+            queryMetadata.getPlan().ifPresent(
+                    queryPlan -> trinoMetadataFacet
+                            .getAdditionalProperties()
+                            .put("queryPlan", queryPlan));
+
+            queryMetadata.getTransactionId().ifPresent(
+                    transactionId -> trinoMetadataFacet
+                            .getAdditionalProperties()
+                            .put("transactionId", transactionId));
+
             return Optional.of(trinoMetadataFacet);
         }
         return Optional.empty();
@@ -121,8 +149,10 @@ public class OpenLineageListener
     {
         OpenLineage.RunFacetsBuilder runFacetsBuilder = ol.newRunFacetsBuilder();
         Optional<OpenLineage.RunFacet> trinoMetadata = getTrinoMetadataFacet(queryCreatedEvent.getMetadata());
+        Optional<OpenLineage.RunFacet> trinoQueryContext = getTrinoQueryContextFacet(queryCreatedEvent.getContext());
 
         trinoMetadata.ifPresent(runFacet -> runFacetsBuilder.put("trino.metadata", runFacet));
+        trinoQueryContext.ifPresent(runFacet -> runFacetsBuilder.put("trino.queryContext", runFacet));
 
         OpenLineage.RunEvent startEvent =
                 ol.newRunEventBuilder()
@@ -131,7 +161,7 @@ public class OpenLineageListener
                         .run(ol.newRunBuilder().runId(runID).facets(runFacetsBuilder.build()).build())
                         .job(
                                 ol.newJobBuilder()
-                                        .namespace(getJobNamespace())
+                                        .namespace(getJobNamespace(queryCreatedEvent.getContext()))
                                         .name(queryCreatedEvent.getMetadata().getQueryId())
                                         .facets(
                                                 ol.newJobFacetsBuilder()
@@ -151,9 +181,11 @@ public class OpenLineageListener
         OpenLineage.RunFacetsBuilder runFacetsBuilder = ol.newRunFacetsBuilder();
         Optional<OpenLineage.RunFacet> trinoMetadata = getTrinoMetadataFacet(queryCompletedEvent.getMetadata());
         Optional<OpenLineage.RunFacet> trinoQueryStatistics = getTrinoQueryStatisticsFacet(queryCompletedEvent.getStatistics());
+        Optional<OpenLineage.RunFacet> trinoQueryContext = getTrinoQueryContextFacet(queryCompletedEvent.getContext());
 
         trinoMetadata.ifPresent(runFacet -> runFacetsBuilder.put("trino.metadata", runFacet));
         trinoQueryStatistics.ifPresent(runFacet -> runFacetsBuilder.put("trino.queryStatistics", runFacet));
+        trinoQueryContext.ifPresent(runFacet -> runFacetsBuilder.put("trino.queryContext", runFacet));
 
         OpenLineage.RunEvent completedEvent =
                 ol.newRunEventBuilder()
@@ -165,7 +197,7 @@ public class OpenLineageListener
                         .run(ol.newRunBuilder().runId(runID).facets(runFacetsBuilder.build()).build())
                         .job(
                                 ol.newJobBuilder()
-                                        .namespace(getJobNamespace())
+                                        .namespace(getJobNamespace(queryCompletedEvent.getContext()))
                                         .name(queryCompletedEvent.getMetadata().getQueryId())
                                         .facets(
                                                 ol.newJobFacetsBuilder()
@@ -258,8 +290,8 @@ public class OpenLineageListener
         }
     }
 
-    private String getJobNamespace()
+    private String getJobNamespace(QueryContext queryContext)
     {
-        return "trino-" + this.namespace;
+        return "trino-" + this.namespace.orElse(queryContext.getEnvironment());
     }
 }

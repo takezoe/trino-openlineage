@@ -38,12 +38,13 @@ public class OpenLineageListenerFactory
     {
         String url = requireNonNull(config.get("openlineage.url"));
         String apiKey = config.get("openlineage.apikey");
-        Boolean trinoMetadataFacetEnabled = config.get("openlineage.facets.trinoMetadata.enabled").equalsIgnoreCase("true");
-        Boolean trinoQueryStatisticsFacetEnabled = config.get("openlineage.facets.trinoQueryStatistics.enabled").equalsIgnoreCase("true");
+        Boolean trinoMetadataFacetEnabled = Optional.ofNullable(config.get("openlineage.facets.trinoMetadata.enabled")).orElse("true").equalsIgnoreCase("true");
+        Boolean trinoQueryContextFacetEnabled = Optional.ofNullable(config.get("openlineage.facets.trinoQueryContext.enabled")).orElse("true").equalsIgnoreCase("true");
+        Boolean trinoQueryStatisticsFacetEnabled = Optional.ofNullable(config.get("openlineage.facets.trinoQueryStatistics.enabled")).orElse("true").equalsIgnoreCase("true");
         String namespace = config.get("openlineage.namespace");
 
         logger.info("openlineage.url: " + url);
 
-        return new OpenLineageListener(url, Optional.ofNullable(namespace), Optional.ofNullable(apiKey), trinoMetadataFacetEnabled, trinoQueryStatisticsFacetEnabled);
+        return new OpenLineageListener(url, Optional.ofNullable(namespace), Optional.ofNullable(apiKey), trinoMetadataFacetEnabled, trinoQueryContextFacetEnabled, trinoQueryStatisticsFacetEnabled);
     }
 }
