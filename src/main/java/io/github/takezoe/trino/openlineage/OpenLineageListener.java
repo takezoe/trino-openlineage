@@ -27,6 +27,7 @@ import java.lang.reflect.Field;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -181,6 +182,18 @@ public class OpenLineageListener
                 ol.newInputDatasetBuilder()
                         .namespace(getDatasetNamespace(inputMetadata.getCatalogName()))
                         .name(inputMetadata.getSchema() + "." + inputMetadata.getTable())
+                        .facets(ol.newDatasetFacetsBuilder()
+                                .schema(ol.newSchemaDatasetFacetBuilder()
+                                    .fields(
+                                        inputMetadata
+                                                .getColumns()
+                                                .stream()
+                                                .map(field -> ol.newSchemaDatasetFacetFieldsBuilder()
+                                                        .name(field)
+                                                        .build()
+                                                ).toList())
+                                    .build()
+                        ).build())
                         .build()
         ).collect(toImmutableList());
     }
@@ -194,7 +207,21 @@ public class OpenLineageListener
                     ol.newOutputDatasetBuilder()
                             .namespace(getDatasetNamespace(outputMetadata.getCatalogName()))
                             .name(outputMetadata.getSchema() + "." + outputMetadata.getTable())
-                            .build());
+                            .facets(ol.newDatasetFacetsBuilder()
+                                    .schema(ol.newSchemaDatasetFacetBuilder()
+                                            .fields(
+                                                    outputMetadata
+                                                            .getColumns()
+                                                            .orElse(new ArrayList<>())
+                                                            .stream()
+                                                            .map(column -> ol.newSchemaDatasetFacetFieldsBuilder()
+                                                                            .name(column.getColumnName())
+                                                                            .type(column.getColumnType())
+                                                                            .build())
+                                                            .toList()
+                                            ).build()
+                                    ).build()
+                            ).build());
         }
         else {
             return ImmutableList.of();
