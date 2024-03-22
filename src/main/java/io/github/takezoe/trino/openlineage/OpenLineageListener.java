@@ -25,6 +25,7 @@ import io.trino.spi.eventlistener.QueryStatistics;
 
 import java.lang.reflect.Field;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
@@ -47,22 +48,29 @@ public class OpenLineageListener
         this.queryStatisticsFacetEnabled = queryStatisticsFacetEnabled;
     }
 
+    private UUID getQueryId(QueryMetadata queryMetadata)
+    {
+        return UUID.nameUUIDFromBytes(queryMetadata.getQueryId().getBytes(StandardCharsets.UTF_8));
+    }
+
     @Override
     public void queryCreated(QueryCreatedEvent queryCreatedEvent)
     {
-        // Do nothing here
+        UUID runID = getQueryId(queryCreatedEvent.getMetadata());
+
+        try {
+            sendStartEvent(runID, queryCreatedEvent);
+        }
+        catch (IllegalAccessException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @Override
     public void queryCompleted(QueryCompletedEvent queryCompletedEvent)
     {
-        UUID runID = UUID.randomUUID();
-        try {
-            sendStartEvent(runID, queryCompletedEvent);
-        }
-        catch (IllegalAccessException e) {
-            throw new RuntimeException(e);
-        }
+        UUID runID = getQueryId(queryCompletedEvent.getMetadata());
+
         try {
             sendCompletedEvent(runID, queryCompletedEvent);
         }
@@ -104,30 +112,28 @@ public class OpenLineageListener
         return Optional.empty();
     }
 
-    private void sendStartEvent(UUID runID, QueryCompletedEvent queryCompletedEvent)
+    private void sendStartEvent(UUID runID, QueryCreatedEvent queryCreatedEvent)
             throws IllegalAccessException
     {
         OpenLineage.RunFacetsBuilder runFacetsBuilder = ol.newRunFacetsBuilder();
-        Optional<OpenLineage.RunFacet> trinoMetadata = getTrinoMetadataFacet(queryCompletedEvent.getMetadata());
+        Optional<OpenLineage.RunFacet> trinoMetadata = getTrinoMetadataFacet(queryCreatedEvent.getMetadata());
 
         trinoMetadata.ifPresent(runFacet -> runFacetsBuilder.put("trino.metadata", runFacet));
 
         OpenLineage.RunEvent startEvent =
                 ol.newRunEventBuilder()
                         .eventType(OpenLineage.RunEvent.EventType.START)
-                        .eventTime(queryCompletedEvent.getExecutionStartTime().atZone(ZoneId.of("UTC")))
+                        .eventTime(queryCreatedEvent.getCreateTime().atZone(ZoneId.of("UTC")))
                         .run(ol.newRunBuilder().runId(runID).facets(runFacetsBuilder.build()).build())
                         .job(
                                 ol.newJobBuilder()
-                                        .namespace(queryCompletedEvent.getContext().getUser())
-                                        .name(queryCompletedEvent.getMetadata().getQueryId())
+                                        .namespace(queryCreatedEvent.getContext().getUser())
+                                        .name(queryCreatedEvent.getMetadata().getQueryId())
                                         .facets(
                                                 ol.newJobFacetsBuilder()
-                                                        .sql(ol.newSQLJobFacet(queryCompletedEvent.getMetadata().getQuery()))
+                                                        .sql(ol.newSQLJobFacet(queryCreatedEvent.getMetadata().getQuery()))
                                                         .build())
                                         .build())
-                        .inputs(buildInputs(queryCompletedEvent.getIoMetadata()))
-                        .outputs(buildOutputs(queryCompletedEvent.getIoMetadata()))
                         .build();
 
         client.emit(startEvent);
