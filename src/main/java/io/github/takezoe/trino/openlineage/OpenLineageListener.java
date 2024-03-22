@@ -232,9 +232,9 @@ public class OpenLineageListener
                                             .fields(
                                                     outputColumns.stream()
                                                             .map(column -> ol.newSchemaDatasetFacetFieldsBuilder()
-                                                                            .name(column.getColumnName())
-                                                                            .type(column.getColumnType())
-                                                                            .build())
+                                                                    .name(column.getColumnName())
+                                                                    .type(column.getColumnType())
+                                                                    .build())
                                                             .toList()
                                             ).build()
                                     ).build()
