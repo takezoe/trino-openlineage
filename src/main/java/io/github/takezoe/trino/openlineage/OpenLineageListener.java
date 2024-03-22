@@ -40,12 +40,14 @@ public class OpenLineageListener
 {
     private final OpenLineage ol = new OpenLineage(URI.create("https://github.com/takezoe/trino-openlineage"));
     private final OpenLineageClient client;
+    private final String namespace;
     private final Boolean trinoMetadataFacetEnabled;
     private final Boolean queryStatisticsFacetEnabled;
 
-    public OpenLineageListener(String url, Optional<String> apiKey, Boolean trinoMetadataFacetEnabled, Boolean queryStatisticsFacetEnabled)
+    public OpenLineageListener(String url, Optional<String> namespace, Optional<String> apiKey, Boolean trinoMetadataFacetEnabled, Boolean queryStatisticsFacetEnabled)
     {
         this.client = new OpenLineageClient(url, apiKey);
+        this.namespace = namespace.orElse("default");
         this.trinoMetadataFacetEnabled = trinoMetadataFacetEnabled;
         this.queryStatisticsFacetEnabled = queryStatisticsFacetEnabled;
     }
@@ -129,7 +131,7 @@ public class OpenLineageListener
                         .run(ol.newRunBuilder().runId(runID).facets(runFacetsBuilder.build()).build())
                         .job(
                                 ol.newJobBuilder()
-                                        .namespace(queryCreatedEvent.getContext().getUser())
+                                        .namespace(getJobNamespace())
                                         .name(queryCreatedEvent.getMetadata().getQueryId())
                                         .facets(
                                                 ol.newJobFacetsBuilder()
@@ -163,7 +165,7 @@ public class OpenLineageListener
                         .run(ol.newRunBuilder().runId(runID).facets(runFacetsBuilder.build()).build())
                         .job(
                                 ol.newJobBuilder()
-                                        .namespace(queryCompletedEvent.getContext().getUser())
+                                        .namespace(getJobNamespace())
                                         .name(queryCompletedEvent.getMetadata().getQueryId())
                                         .facets(
                                                 ol.newJobFacetsBuilder()
@@ -216,7 +218,7 @@ public class OpenLineageListener
                                             .stream()
                                             .map(inputColumn -> ol.newColumnLineageDatasetFacetFieldsAdditionalInputFieldsBuilder()
                                                     .field(inputColumn.getColumnName())
-                                                    .namespace(inputColumn.getCatalog())
+                                                    .namespace(getDatasetNamespace(inputColumn.getCatalog()))
                                                     .name(inputColumn.getSchema() + "." + inputColumn.getTable())
                                                     .build())
                                             .toList()
@@ -254,5 +256,10 @@ public class OpenLineageListener
         else {
             return catalogName;
         }
+    }
+
+    private String getJobNamespace()
+    {
+        return this.namespace;
     }
 }
