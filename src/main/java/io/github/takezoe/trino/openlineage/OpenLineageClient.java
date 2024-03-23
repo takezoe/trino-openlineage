@@ -51,17 +51,20 @@ public class OpenLineageClient
             String json = objectMapper.writeValueAsString(event);
             logger.info(json);
 
-            Request.Builder requestBuilder = Request.builder()
-                    .setMethod("POST")
-                    .setUri(URI.create(url + "/api/v1/lineage"))
-                    .addHeader("Content-Type", "application/json")
-                    .setBodyGenerator(StaticBodyGenerator.createStaticBodyGenerator(json.getBytes(StandardCharsets.UTF_8)));
+            Request.Builder requestBuilder =
+                    Request.builder()
+                            .setMethod("POST")
+                            .setUri(URI.create(url + "/api/v1/lineage"))
+                            .addHeader("Content-Type", "application/json")
+                            .setBodyGenerator(
+                                    StaticBodyGenerator.createStaticBodyGenerator(
+                                            json.getBytes(StandardCharsets.UTF_8)));
 
-            if (apiKey.isPresent()) {
-                requestBuilder.addHeader("Authorization", "Bearer " + apiKey.get());
-            }
+            apiKey.ifPresent(s -> requestBuilder.addHeader("Authorization", "Bearer " + s));
 
-            StatusResponseHandler.StatusResponse status = jettyClient.execute(requestBuilder.build(), StatusResponseHandler.createStatusResponseHandler());
+            StatusResponseHandler.StatusResponse status =
+                    jettyClient.execute(
+                            requestBuilder.build(), StatusResponseHandler.createStatusResponseHandler());
             logger.info("Response status: " + status.getStatusCode());
         }
         catch (Exception e) {
