@@ -1,5 +1,9 @@
+> [!CAUTION]
+> This repository is no longer maintaned since OpenLineage integration has been [merged into Trino](https://github.com/trinodb/trino/pull/21265).
+
 trino-openlineage
 ====
+
 An experimental [OpenLineage](https://github.com/OpenLineage/OpenLineage) integration for [Trino](https://github.com/trinodb/trino)
 
 ![Marquez](marquez.png)
